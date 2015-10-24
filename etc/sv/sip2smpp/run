@@ -1,0 +1,4 @@
+#!/bin/sh
+exec 2>&1
+echo "sip2smpp restart" | /usr/bin/ts >> /var/log/runsv.log
+exec sip2smpp -c /etc/sip2smpp
