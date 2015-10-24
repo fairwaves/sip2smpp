@@ -43,12 +43,10 @@
 #include "routing_def.h"
 #include "routing.h"
 #include "database.h"
-#include "daemonize/daemonize.h"
 
 threadpool_t *p_threadpool = NULL;
 
 int running = 1;
-char* pid_file = (char*)DEFAULT_PIDFILE;
 
 func_start_routing f_start_routing = NULL;
 func_routing f_routing = NULL;
@@ -79,8 +77,6 @@ void usage(int8_t value){
     printf("%s    -h  %s: help\n", CYAN, END_COLOR);
     printf("%s    -v  %s: show version\n", CYAN, END_COLOR);
     printf("%s    -D  %s: debug level (0-8)\n", CYAN, END_COLOR);
-    printf("%s    -f  %s: use fork\n", CYAN, END_COLOR);
-    printf("%s    -P  %s: PID file. Default PID file is [%s]\n", CYAN, END_COLOR, DEFAULT_PIDFILE);
     printf("%s    -c  %s: config file to use to specify some options. Default location is [%s]\n", CYAN, END_COLOR, DEFAULT_CONFIG);
 
     handler(value);
@@ -198,11 +194,9 @@ int main(int argc, char **argv){
     void *mod_routing = NULL;
     char *conffile = NULL;
     FILE *file = NULL;
-    int nofork = 1;
     char str[100];
     int c = 0;
     char b_log  = 1;
-    char b_fork = 1;
     memset(&str, 0, 100*sizeof(char));
     log_init(NULL);
     log2display(LOG_ALERT);
@@ -220,13 +214,6 @@ int main(int argc, char **argv){
             case 'v':
                     printf("sip2smpp version: %s\n", VERSION);
                     exit(0);
-                    break;
-            case 'P':
-                    pid_file = optarg;
-                    break;
-            case 'f':
-                    nofork = 0;
-                    b_fork = 0;
                     break;
             case 'h':
                     usage(0);
@@ -267,15 +254,6 @@ int main(int argc, char **argv){
         log2display((Loglevel)cfg_main->log_level);
     }
 
-    if(b_fork){
-        nofork = !cfg_main->fork;
-    }
-
-    if(daemonize(nofork) != 0){
-        ERROR(LOG_FILE | LOG_SCREEN,"Daemoniize failed");
-        exit(-1);
-    }
-
     //Load routing module
     void* functions[2] = { send_sms_to_smpp, send_sms_to_sip };
     void* cfgs[2] = { cfg_smpp, cfg_sip };
@@ -311,7 +289,6 @@ int main(int argc, char **argv){
     }
 
     printf("SIP 2 SMPP Version  [%s]\n", VERSION);
-    printf("Pid file            [%s]\n", pid_file);
     printf("Config File         [%s]\n", conffile);
 
     display_config_file(CONFIG_ALL, NULL);

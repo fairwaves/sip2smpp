@@ -13,7 +13,6 @@ sip2smpp_SOURCES = main.c \
                    str.c \
                    sm_struct.c \
                    config/config.c \
-                   daemonize/daemonize.c \
                    linked_list/keys.c \
                    linked_list/list.c \
                    linked_list/map.c \

@@ -43,7 +43,6 @@
 #define STR_FOREIGN_KEYS    "foreign_keys"
 //MAIN
 #define STR_LOG_LEVEL       "log_level"
-#define STR_FORK            "fork"
 #define STR_LAUNCH_MSG      "launch_msg"
 #define STR_ROUTING_MODULE  "routing_module"
 #define STR_SYSTEM_CHARSET  "system_charset"
@@ -71,7 +70,7 @@ typedef enum _enum_config_load{
     CONFIG_MAIN     = 0x01,
     CONFIG_SQLITE   = 0x02,
     CONFIG_SIP      = 0x04,
-    CONFIG_SMPP     = 0x08, 
+    CONFIG_SMPP     = 0x08,
     CONFIG_SIGTRAN  = 0x10, //TODO
     CONFIG_ALL      = 0xFF
 } enum_config_load_t;
@@ -80,7 +79,6 @@ typedef enum _enum_config_load{
 typedef struct _config_main{
     char    log_level;
     char    *launch_msg;
-    bool    fork;
     char    *system_charset;
     char    *routing_module;
 } config_main_t;

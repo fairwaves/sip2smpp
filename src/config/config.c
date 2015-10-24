@@ -40,7 +40,6 @@ config_main_t  *cfg_main;
 inline void destroy_config_main(config_main_t *main){
     //main->log_level = 0;
     //main->loglevel = NULL;
-    //main->fork = false;
     if(main->launch_msg)
         free(main->launch_msg);
     //main->launch_msg = NULL;
@@ -64,11 +63,9 @@ inline void display_config_main(config_main_t *main){
         sprintf(buffer, "[main]\n"
                         STR_LOG_LEVEL"      : %s\n"
                         STR_LAUNCH_MSG"     : %s\n"
-                        STR_FORK"           : %d\n"
                         STR_ROUTING_MODULE" : %s\n",
                 str_loglevel[(int)main->log_level],
                 main->launch_msg,
-                main->fork,
                 main->routing_module ? main->routing_module : "null");
         DEBUG(LOG_SCREEN, "\n%s", buffer)
     }
@@ -100,13 +97,11 @@ static inline int _load_config_main(void){
     ini_gets(STR_MAIN, STR_LOG_LEVEL, "DEBUG", loglevel, sizearray(loglevel), conffile);
     _main.log_level = str_to_loglevel(loglevel);
 
-    _main.fork = (bool)ini_getbool(STR_MAIN, STR_FORK, false, conffile); 
-
     ini_gets(STR_MAIN, STR_ROUTING_MODULE, "none", routing_module, sizearray(routing_module), conffile);
     if(strcmp(routing_module, "none") != 0){
         _strcpy(_main.routing_module, routing_module);
     }
-    
+
     ini_gets(STR_MAIN, STR_LAUNCH_MSG, "none", launch_msg, sizearray(launch_msg), conffile);
     if(strcmp(launch_msg, "none") != 0){
         _strcpy(_main.launch_msg, launch_msg);
@@ -114,7 +109,7 @@ static inline int _load_config_main(void){
 
     ini_gets(STR_MAIN, STR_SYSTEM_CHARSET, DEFAULT_SYSTEM_CHARSET, system_charset, sizearray(system_charset), conffile);
     _strcpy(_main.system_charset, system_charset);
-    
+
     if((error = _check_config_main()) != -1){
         memcpy(cfg_main, &_main, sizeof(config_main_t));
         memset(&_main, 0, sizeof(config_main_t));
@@ -129,7 +124,7 @@ static inline int _load_config_sqlite(void){
     int   error            = 0;
     char  path[255]        = { 0 }; //SQLite3
     char  encoding[25]     = { 0 }; //default : UTF-8
-    char  synchronous[20]  = { 0 }; //default : normal 
+    char  synchronous[20]  = { 0 }; //default : normal
     char  foreign_keys[10] = { 0 }; //default : on
 
     destroy_config_sqlite(&_sqlite);
@@ -294,7 +289,7 @@ static inline int _load_config_interface_smpp(const char *name){
 //    _smpp.ton_src = str_to_ton(ton);
 //    _smpp.ton_dst = _smpp.ton_src;
 
-    ini_gets(name, STR_SERVICE_TYPE, "", service_type, sizearray(service_type), conffile); 
+    ini_gets(name, STR_SERVICE_TYPE, "", service_type, sizearray(service_type), conffile);
     _strcpy(_smpp.service_type, service_type);
 
     ini_gets(name, STR_SYSTEM_TYPE, "WWW", system_type, sizearray(system_type), conffile);
@@ -362,7 +357,7 @@ static inline int _load_config_interface_sip(const char *name){
     destroy_config_sip(&_sip);
 
     _strcpy(_sip.name, name);
-    
+
     ini_gets(name, STR_IP, "none", ip, sizearray(ip), conffile);
     if(strcmp(ip, "none") != 0){
         _strcpy(_sip.ip, ip);
@@ -385,7 +380,7 @@ static inline int _load_config_interface_sip(const char *name){
     }else{
         destroy_config_sip(&_sip);
     }
- 
+
     return (int) error;
 }
 /*
