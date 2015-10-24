@@ -1,8 +1,9 @@
 
 AM_CFLAGS = -fPIC -Wall -pedantic
-AM_LDFLAGS = -pthread -lzdb -lsmpp34 -lrt -ldl -liconv
+AM_LDFLAGS = -pthread
 
 bin_PROGRAMS = sip2smpp
+sip2smpp_LDADD = -lzdb -lsmpp34 -lrt -ldl
 sip2smpp_SOURCES = main.c \
                    database.c \
                    routing.c \
