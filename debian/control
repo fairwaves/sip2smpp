@@ -1,0 +1,11 @@
+Source: sip2smpp
+Section: comm
+Priority: extra
+Maintainer: Kirill Zakharenko <earwin@gmail.com>
+Build-Depends: debhelper (>= 9.0.0~), dh-autoreconf, libsqlite3-dev, libsmpp34-dev, libzdb-dev
+Standards-Version: 3.9.5
+
+Package: sip2smpp
+Architecture: any
+Depends: ${misc:Depends}, ${shlibs:Depends}, libsqlite3-0, libdbd-sqlite3, libsmpp0, libzdb9
+Description: SIP to SMPP gateway

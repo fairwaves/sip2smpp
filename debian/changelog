@@ -1,0 +1,5 @@
+sip2smpp (0.2.0) trusty; urgency=low
+
+  * Initial release
+
+ -- Kirill Zakharenko <earwin@gmail.com>  Sat, 24 Oct 2015 15:18:58 +0200
