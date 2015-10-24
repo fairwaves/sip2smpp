@@ -1,13 +1,9 @@
 #include "log.h"
 
-static char* LOG_FILE_PATH        = NULL;
-static FILE* P_FILE               = NULL;
 static pthread_mutex_t* P_MUTEX   = NULL;
 static Loglevel log_choice        = LOG_INFO;
 
 static void _p_printf_init(const void *p_funcion);
-static int _log_open_file(const char *path);
-static int _log_close_file(void);
 
 int (*printf_function)(const char *restrict, ...) = &printf;
 
@@ -53,49 +49,17 @@ int str_to_loglevel(const char *name){
 
 /**
  * \brief	This function allow to init LOG_SCREEN function.
- * 
+ *
  * \param	p_function	This parameter is a pointer function used for LOG_SCREEN (by default printf)
  */
 static void _p_printf_init(const void *p_function){
 	if(p_function){
 		printf_function = (int (*)(const char *restrict, ...))p_function;
 	}else{
-		printf_function = &printf;	
+		printf_function = &printf;
 	}
 	return;
 }
-
-/**
- * \brief	Load the log file.
- *
- * \param	path : The parameter is the path of LOG file.
- */
-static int _log_open_file(const char *path){
-	if(path && !P_FILE){
-		LOG_FILE_PATH = strdup(path);
-		P_FILE        = fopen(LOG_FILE_PATH,"a");
-		return 0;
-	}else{
-		ERROR(LOG_FILE | LOG_SCREEN,"Path is not correct or a file is already open");
-	}
-	return -1;
-}
-
-/**
- * \brief	Close the log file.
- */
-static int _log_close_file(void){
-	if(P_FILE){
-		fclose(P_FILE);
-		P_FILE = NULL;
-	}
-	if(LOG_FILE_PATH){
-		free(LOG_FILE_PATH);
-		LOG_FILE_PATH = NULL;
-	}
-	return 0;
-}
-
 
 /**
  * \brief	Display every LOG level more smaller l.
@@ -117,31 +81,13 @@ Loglevel log_get_display(void){
   return log_choice;
 }
 
-/**
- * \brief	Reload the log file.
- *
- * \param	path : The parameter is the path of LOG file.
- */
-int log_change_file(const char *path){
-	if(path){
-		_log_close_file();
-		_log_open_file(path);
-		return 0;
-	}else{
-		ERROR(LOG_SCREEN | LOG_FILE,"Path is not correct");
-
-	}
-	return -1;
-}
 
 /**
  * \brief	This function allow to init the log system.
  *
- * \param	path 		The parameter is the path of LOG file.
  * \param	p_function	The parameter is pointer of function to display log (NULL : by default is printf).
  */
-int log_init(const char *path,const void *p_function){
-	_log_open_file(path);
+int log_init(const void *p_function){
 	if(P_MUTEX == NULL){
 		P_MUTEX = (pthread_mutex_t*)malloc(sizeof(pthread_mutex_t));
 		pthread_mutex_init(P_MUTEX,NULL);
@@ -163,7 +109,6 @@ int log_destroy(void){
 		free(P_MUTEX);
 		P_MUTEX = NULL;
 	}
-	_log_close_file();
 	INFO(LOG_SCREEN,"Logging destroy");
 	return 0;
 }
@@ -180,24 +125,14 @@ int log_destroy(void){
  * \param	line	This parameter is line number
  * \param	buff	This parameter is buffer of log
  */
-void log_hook(Loglevel lvl, unsigned int display, pthread_t tid, pid_t pid, const char* func, const char* file, unsigned int line, const char* buff){
+void log_hook(Loglevel lvl, pthread_t tid, pid_t pid, const char* func, const char* file, unsigned int line, const char* buff){
 	if(P_MUTEX) pthread_mutex_lock(P_MUTEX);
 	//if( (lvl >= LOG_CONSOLE || lvl <= LOG_ALERT) && buff){
-	if(lvl >= LOG_CONSOLE && lvl <= LOG_ALERT && buff){
+	if(lvl >= LOG_CONSOLE && lvl <= LOG_ALERT && log_choice >= lvl && buff){
 		if(tid != 0){
-		   if( (display & LOG_SCREEN) != 0 && log_choice >= lvl ){ 
 			printf_function("%s [%lx/%u] [%s,%s:%d] %s\n",str_loglevel[lvl],tid,pid,file,func,line,buff);
-		   }
-		   if( (display & LOG_FILE) != 0 && P_FILE ){
-			fprintf(P_FILE,"%s [%lx/%u] [%s,%s:%d] %s\n",str_loglevel[lvl],tid,pid,file,func,line,buff);
-		   }
 		}else{
-		   if( (display & LOG_SCREEN) != 0 && log_choice >= lvl ){
 			printf_function("%s [%u] [%s,%s:%d] %s\n",str_loglevel[lvl],pid,file,func,line,buff);
-		   }
-		   if( (display & LOG_FILE) != 0 && P_FILE ){
-			fprintf(P_FILE,"%s [%u] [%s,%s:%d] %s\n",str_loglevel[lvl],pid,file,func,line,buff);
-		   }
 		}
 	}
 	if(P_MUTEX) pthread_mutex_unlock(P_MUTEX);
@@ -212,7 +147,7 @@ int main(){
 	log_init("test.log",NULL);
 
 	log2display(LOG_NONE);
-	
+
 	CONSOLE(LOG_SCREEN,	"test log CONSOLE");
 	DEBUG(	LOG_SCREEN,	"test log DEBUG %d",5);
 	INFO(	LOG_SCREEN,	"test log INFO %s, %d","add test",5);

@@ -37,15 +37,6 @@ extern "C"{
 # define LOG_BUFFER_LEN 4096
 #endif
 
-/**
- * \brief Mode to display
- */
-typedef enum _LogFlagsDisplay{
-	LOG_FILE   = 0x01,
-	LOG_SCREEN = 0x02,
-	LOG_DB     = 0x04 //NOT IMPLEMENTED
-}LogFlagsDisplay;
-
 typedef enum _Loglevel{
 	LOG_NONE    = 0x00,
 	LOG_CONSOLE = 0x01,
@@ -59,7 +50,7 @@ typedef enum _Loglevel{
 }Loglevel;
 
 #define LOG_CONSOLE_STR "CONSOLE"
-#define LOG_DEBUG_STR   "DEBUG  " 
+#define LOG_DEBUG_STR   "DEBUG  "
 #define LOG_INFO_STR    "INFO   "
 #define LOG_NOTICE_STR  "NOTICE "
 #define LOG_WARNING_STR "WARNING"
@@ -72,29 +63,28 @@ extern int (*printf_function)(const char *restrict, ...);
 
 void log2display(Loglevel l);
 Loglevel log_get_display(void);
-int  log_init(const char *path,const void *p_function);
+int  log_init(const void *p_function);
 int  log_destroy(void);
-int  log_change_file(const char *path);
 int str_to_loglevel(const char *name);
 
-void log_hook(Loglevel lvl, unsigned int display,pthread_t tid,pid_t pid, const char* func, const char* file, unsigned int line, const char* buff);
+void log_hook(Loglevel lvl, pthread_t tid,pid_t pid, const char* func, const char* file, unsigned int line, const char* buff);
 
-#define _LOG(lvl, display_flags, text, args...) \
+#define _LOG(lvl, text, args...) \
 	if( (lvl >= LOG_CONSOLE || lvl <= LOG_ALERT) && text){ \
                 char buff[LOG_BUFFER_LEN]; \
                 int n_ = snprintf(buff, sizeof(buff), text, ##args); \
 		if(buff[n_ - 1] == '\n') buff[n_ - 1] = '\0'; \
-		log_hook(lvl, display_flags, GET_TID, GET_PID, __FUNCTION__, __FILE__, __LINE__, buff);	\
+		log_hook(lvl, GET_TID, GET_PID, __FUNCTION__, __FILE__, __LINE__, buff);	\
         }
 
-#define CONSOLE(display_flags, text, ...) _LOG(LOG_CONSOLE, display_flags, text, ##__VA_ARGS__)
-#define DEBUG(display_flags, text, args...) _LOG(LOG_DEBUG, display_flags, text, ##args)
-#define INFO(display_flags, text, args...) _LOG(LOG_INFO, display_flags, text, ##args)
-#define NOTICE(display_flags, text, args...) _LOG(LOG_NOTICE, display_flags, text, ##args)
-#define WARNING(display_flags, text, args...) _LOG(LOG_WARNING, display_flags, text, ##args)
-#define ERROR(display_flags, text, args...) _LOG(LOG_ERROR, display_flags, text, ##args)
-#define CRIT(display_flags, text, args...) _LOG(LOG_CRIT, display_flags, text, ##args)
-#define ALERT(display_flags, text, args...) _LOG(LOG_ALERT, display_flags, text, ##args)
+#define CONSOLE(display_flags, text, ...) _LOG(LOG_CONSOLE, text, ##__VA_ARGS__)
+#define DEBUG(display_flags, text, args...) _LOG(LOG_DEBUG, text, ##args)
+#define INFO(display_flags, text, args...) _LOG(LOG_INFO, text, ##args)
+#define NOTICE(display_flags, text, args...) _LOG(LOG_NOTICE, text, ##args)
+#define WARNING(display_flags, text, args...) _LOG(LOG_WARNING, text, ##args)
+#define ERROR(display_flags, text, args...) _LOG(LOG_ERROR, text, ##args)
+#define CRIT(display_flags, text, args...) _LOG(LOG_CRIT, text, ##args)
+#define ALERT(display_flags, text, args...) _LOG(LOG_ALERT, text, ##args)
 
 #endif /*LOG_H*/
 

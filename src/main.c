@@ -82,7 +82,6 @@ void usage(int8_t value){
     printf("%s    -f  %s: use fork\n", CYAN, END_COLOR);
     printf("%s    -P  %s: PID file. Default PID file is [%s]\n", CYAN, END_COLOR, DEFAULT_PIDFILE);
     printf("%s    -c  %s: config file to use to specify some options. Default location is [%s]\n", CYAN, END_COLOR, DEFAULT_CONFIG);
-    printf("%s    -l  %s: log file to use to specify some options. Default location is [%s]\n", CYAN, END_COLOR, DEFAULT_CONFIG);
 
     handler(value);
 }
@@ -163,7 +162,7 @@ void start_all_threads_interfaces(){
             pthread_create(p_thread, NULL, func_listen_sip, sip);
             map_set(m_threads, name, p_thread);
             p_it = p_it->next;
-        } 
+        }
     }
     if(cfg_smpp){
         iterator_map *p_it = cfg_smpp->begin;
@@ -175,7 +174,7 @@ void start_all_threads_interfaces(){
             pthread_create(p_thread, NULL, func_listen_smpp, smpp);
             map_set(m_threads, name, p_thread);
             p_it = p_it->next;
-        } 
+        }
     }
     return;
 }
@@ -188,11 +187,11 @@ void join_all_threads(){
             pthread_join(*p_thread,NULL);
             map_erase(m_threads, p_it->key);
             p_it = m_threads->begin;
-        } 
+        }
     }
     map_destroy(&m_threads);
     return;
-} 
+}
 
 
 int main(int argc, char **argv){
@@ -205,14 +204,14 @@ int main(int argc, char **argv){
     char b_log  = 1;
     char b_fork = 1;
     memset(&str, 0, 100*sizeof(char));
-    log_init("logFile",NULL);
+    log_init(NULL);
     log2display(LOG_ALERT);
-   
+
     p_threadpool = threadpool_create(5, 8096, 0);
 
     init_maps();
     init_call_id(NULL);
- 
+
     while((c=getopt(argc, argv, "c:vP:fhD:"))!=-1) {
         switch(c) {
             case 'c':
@@ -319,14 +318,14 @@ int main(int argc, char **argv){
 
     start_all_threads_interfaces();
 
-    join_all_threads();  
+    join_all_threads();
 
     threadpool_destroy(p_threadpool, threadpool_graceful);
 
     f_close_routing();
 
     if(cfg_main->routing_module){
-       dlclose(mod_routing); 
+       dlclose(mod_routing);
     }
 
     free_config_file(CONFIG_ALL, NULL);
