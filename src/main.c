@@ -257,6 +257,7 @@ int main(int argc, char **argv){
     //Load routing module
     void* functions[2] = { send_sms_to_smpp, send_sms_to_sip };
     void* cfgs[2] = { cfg_smpp, cfg_sip };
+/*
     if(cfg_main->routing_module){
         mod_routing = dlopen(cfg_main->routing_module, RTLD_NOW | RTLD_GLOBAL);
         if(!mod_routing){
@@ -267,10 +268,11 @@ int main(int argc, char **argv){
         f_routing       = dlsym(mod_routing, "routing");
         f_close_routing = dlsym(mod_routing, "close_routing");
     }else{
+*/
         f_start_routing = default_start_routing;
         f_routing       = default_routing;
         f_close_routing = default_close_routing;
-    }
+//    }
 
     if(db_init() == -1){
         ERROR(LOG_FILE | LOG_SCREEN,"There are errors when the DB connection!");

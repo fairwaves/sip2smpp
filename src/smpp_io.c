@@ -341,6 +341,332 @@ map *map_sar_msg = NULL;
         } \
     }
 
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+
+static const char bcd_num_digits[] = {
+    '0', '1', '2', '3', '4', '5', '6', '7', 
+    '8', '9', '*', '#', 'a', 'b', 'c', '\0'
+};
+
+/* decode a 'called/calling/connect party BCD number' as in 10.5.4.7 */
+int decode_bcd_number(char *output, int output_len, const u_int8_t *bcd_lv,  int len)
+{
+    int i;
+
+    for (i = 0; i < len; i++) {
+        /* lower nibble */
+        output_len--;
+        if (output_len < 0)
+            break;
+        *output++ = bcd_num_digits[bcd_lv[i] & 0xf];
+
+        /* higher nibble */
+        output_len--;
+        if (output_len < 0)
+            break;
+        *output++ = bcd_num_digits[bcd_lv[i] >> 4];
+    }
+    if (output_len > 0)
+        *output++ = '\0';
+
+    return 0;
+}
+
+/* convert a single ASCII character to call-control BCD */
+static int asc_to_bcd(const char asc) 
+{
+    int i;
+
+    for (i = 0; i < ARRAY_SIZE(bcd_num_digits); i++) {
+        if (bcd_num_digits[i] == asc)
+            return i;
+    }
+    return -EINVAL;
+}
+
+/* convert a ASCII phone number to 'called/calling/connect party BCD number' */
+int encode_bcd_number(u_int8_t *bcd_lv, u_int8_t max_len,
+		      int h_len, const char *input)
+{
+    int in_len = strlen(input);
+    int i;
+    u_int8_t *bcd_cur = bcd_lv + 1 + h_len;
+
+    /* two digits per byte, plus type byte */
+    bcd_lv[0] = in_len/2 + h_len;
+    if (in_len % 2)
+        bcd_lv[0]++;
+
+    if (bcd_lv[0] > max_len)
+        return -EIO;
+
+    for (i = 0; i < in_len; i++) {
+        int rc = asc_to_bcd(input[i]);
+        if (rc < 0)
+            return rc;
+        if (i % 2 == 0)
+            *bcd_cur = rc;	
+        else
+            *bcd_cur++ |= (rc << 4);
+    }
+    /* append padding nibble in case of odd length */
+    if (i % 2)
+        *bcd_cur++ |= 0xf0;
+
+    /* return how many bytes we used */
+    return (bcd_cur - bcd_lv);
+}
+
+void bin_to_strhex(unsigned char *bin, unsigned int binsz, char **result)
+{
+  char          hex_str[]= "0123456789abcdef";
+  unsigned int  i;
+
+  *result = (char *)malloc(binsz * 2 + 1);
+  (*result)[binsz * 2] = 0;
+
+  if (!binsz)
+    return;
+
+  for (i = 0; i < binsz; i++)
+    {
+      (*result)[i * 2 + 0] = hex_str[(bin[i] >> 4) & 0x0F];
+      (*result)[i * 2 + 1] = hex_str[(bin[i]     ) & 0x0F];
+    }  
+}
+
+void print_hex_memory(void *mem, unsigned len) {
+  int i;
+  unsigned char *p = (unsigned char *)mem;
+  printf("[");
+  for (i=0;i<len;i++) {
+    printf("0x%02x ", p[i]);
+  }
+  printf("]\n");
+}
+
+
+/* 7bit to octet packing */
+int gsm_septets2octets(uint8_t *result, const uint8_t *rdata, uint8_t septet_len, uint8_t padding)
+{
+	int i = 0, z = 0;
+	uint8_t cb, nb;
+	int shift = 0;
+	uint8_t *data = calloc(septet_len + 1, sizeof(uint8_t));
+
+	if (padding) {
+		shift = 7 - padding;
+		/* the first zero is needed for padding */
+		memcpy(data + 1, rdata, septet_len);
+		septet_len++;
+	} else
+		memcpy(data, rdata, septet_len);
+
+	for (i = 0; i < septet_len; i++) {
+		if (shift == 7) {
+			/*
+			 * special end case with the. This is necessary if the
+			 * last septet fits into the previous octet. E.g. 48
+			 * non-extension characters:
+			 *   ....ag ( a = 1100001, g = 1100111)
+			 * result[40] = 100001 XX, result[41] = 1100111 1 */
+			if (i + 1 < septet_len) {
+				shift = 0;
+				continue;
+			} else if (i + 1 == septet_len)
+				break;
+		}
+
+		cb = (data[i] & 0x7f) >> shift;
+		if (i + 1 < septet_len) {
+			nb = (data[i + 1] & 0x7f) << (7 - shift);
+			cb = cb | nb;
+		}
+
+		result[z++] = cb;
+		shift++;
+	}
+
+	free(data);
+
+	return z;
+}
+
+void smpp_sms_parse(void *data, sm_data_t *p_sm)
+{
+    //RP-DA TLV max len 11 octets
+    //RP-0A TLV max len 11 octets
+    //RP-user-data (TPDU) TLV max len 234 octets
+    char *msg_hex;
+    struct deliver_sm_t *smt = (struct deliver_sm_t*)data;
+    int offset = 0;
+    static u_int8_t tp_mr = 0;
+    unsigned char rp_data[234];
+    //smsc
+    unsigned char rp_da[11] = {0x84, 0x07, 0x91, 0x52, 0x75, 0x89, 0x00, 0x00, 0x10};
+    int rp_da_len = 9;
+    unsigned char rp_oa[11]; 
+    int rp_oa_len = 0;
+    int tp_da_len = 0;
+    int tp_da_len_oct = 0;
+    int tp_da_last_oct_offset = 0;
+    int msg_offset = 0;
+    unsigned char* msg;
+
+    size_t size = strlen((char*)smt->source_addr);
+    _strncpy(p_sm->src, smt->source_addr, size);
+    size = strlen((char*)smt->destination_addr);
+    _strncpy(p_sm->dst, smt->destination_addr, size);
+
+    //**** RP-DA ****
+    printf("RP-DA : T:[0x%02X] L:[0x%02X] V:", rp_da[0], rp_da[1]);
+    print_hex_memory(rp_da + 2, rp_da[1]);
+    //**********************
+
+    //**** RP-OA ****
+    rp_oa_len = encode_bcd_number((u_int8_t *)rp_oa + 2, 9, 0, (const char*)p_sm->src);
+    rp_oa[0] = 0x82;
+    rp_oa[1] = rp_oa_len;
+    rp_oa[2] = 0x91; // international number
+    printf("RP-OA : T:[0x%02X] L:[0x%02X] V:", rp_oa[0], rp_oa[1]);
+    print_hex_memory(rp_oa + 2, rp_oa[1]);
+    //**********************
+
+    //***RP_DATA***
+    
+    //**** RP data type ****
+    rp_data[offset] = 0x04; // RP data type  0x04
+    printf("RP-DATA : T:[0x%02X] \n", rp_data[offset]);
+    offset += 1;
+    //**********************
+
+    //**** RP data len ****
+    offset += 1; // RP data length
+    //**********************
+
+    printf("RP-DATA : V:[start]\n");
+
+    //**** TPDU first octet ****
+    int udhi = 0;
+    if (smt->esm_class & 0x40) {
+        rp_data[offset] = 0x71; // set UDHI = 1
+        udhi = 1;
+    } else {
+        rp_data[offset] = 0x31; // set UDHI = 0
+    }
+    printf("TPDU : First octet : [0x%02X] \n", rp_data[offset]);
+    offset += 1;
+    //**********************
+    
+    //**** TPDU TP-MR ****
+    rp_data[offset] = tp_mr; // TP-MR
+    printf("TPDU : TP-MR : [0x%02X] \n", rp_data[3]);
+    tp_mr++;
+    if (tp_mr > 0xff) {
+        tp_mr = 0;
+    }
+    offset += 1;
+    //**********************
+    
+    //**** TPDU TP-DA ****
+    tp_da_len_oct = encode_bcd_number((u_int8_t *)rp_data + offset + 1, 9, 0, (const char*)p_sm->dst) - 1;
+    tp_da_last_oct_offset = offset + 2 + tp_da_len_oct - 1;
+    tp_da_len = tp_da_len_oct * 2;
+    if ((rp_data[tp_da_last_oct_offset] & 0xf0) == 0xf0)
+    {
+        tp_da_len -= 1;
+    }
+    rp_data[offset] = tp_da_len; //TP-DA length - number of digits
+    printf("TPDU : TP-DA : LEN : [0x%02X] \n", rp_data[offset]);
+    offset += 1;
+    
+    rp_data[offset] = 0x91; //TP-DA type: international number
+    printf("TPDU : TP-DA : TYPE : [0x%02X] \n", rp_data[offset]);
+    offset += 1;
+    
+    printf("TPDU : TP-DA : NUMBER : ");
+    print_hex_memory(rp_data + offset, tp_da_len_oct);
+    offset += tp_da_len_oct;
+    printf("#### tp_da_len_oct = %d \n", tp_da_len_oct);
+    printf("#### tp_da_last_oct_offset = %d \n", tp_da_last_oct_offset);
+    printf("#### rp_data[tp_da_last_oct_offset] = %d \n", rp_data[tp_da_last_oct_offset]);
+    //**********************
+    
+    //**** TPDU TP-PID ****
+    rp_data[offset] = 0x00;
+    printf("TPDU : TP-PID : [0x%02X] \n", rp_data[offset]);
+    offset += 1;
+    //**********************
+
+    //**** TPDU TP-DSC ****
+    rp_data[offset] = 0x00;
+    printf("TPDU : TP-DSC : [0x%02X] \n", rp_data[offset]);
+    offset += 1;
+    //**********************
+
+    //**** TPDU TP-VP ****
+    rp_data[offset] = 0xff;
+    printf("TPDU : TP-DSC : [0x%02X] \n", rp_data[offset]);
+    offset += 1;
+    //**********************
+
+    //**** TPDU TP-User-data ****
+    int tp_user_data_len = 0;
+    //int udh_len = 0;
+    /*
+    if (udhi) {
+         udh_len = *smt->short_message;
+         printf("TPDU : TP-User-data: UDH Len: %d", udh_len);
+         memcpy(rp_data + offset, smt->short_message, udh_len + 1);
+         printf("TPDU : TP-User-data: UDH : ");
+         print_hex_memory(rp_data + offset, udh_len + 1);
+         offset += udh_len + 1;
+         
+         tp_user_data_len = gsm_septets2octets(rp_data + offset + 1, smt->short_message, smt->sm_length, 0);
+
+         
+    } else {
+    */
+    tp_user_data_len = gsm_septets2octets(rp_data + offset + 1, smt->short_message, smt->sm_length, 0);
+    rp_data[offset] = smt->sm_length; //TP-User-data-len
+    printf("TPDU : TP-User-data : Len : [0x%02X] \n", rp_data[offset]);
+    offset += 1;
+    printf("TPDU : TP-User-data : Data : ");
+    print_hex_memory(rp_data + offset, tp_user_data_len);
+    offset += tp_user_data_len;
+    //**********************
+
+    printf("RP-DATA : V : [end] \n");
+
+    //**** RP data len ****
+    rp_data[1] = offset - 2; // RP data length
+    printf("TPDU : RP-DATA : L : [0x%02X] \n", rp_data[1]);
+    //**********************
+    
+    
+    //copy to msg
+    int msg_len = rp_da_len + rp_oa_len + 2 + offset;
+    printf("#### rp_da_len = %d \n", rp_da_len);
+    printf("#### rp_oa_len = %d \n", rp_oa_len);
+    printf("#### offset = %d \n", offset);
+    printf("#### msg_len = %d \n", msg_len);
+
+    msg = (unsigned char*)malloc(msg_len);
+    memcpy(msg, rp_da, rp_da_len);
+    msg_offset += rp_da_len;
+    memcpy(msg + msg_offset, rp_oa, rp_oa_len + 2);
+    msg_offset += (rp_oa_len + 2);
+    memcpy(msg + msg_offset, rp_data, offset);
+    
+    bin_to_strhex(msg, msg_len, &msg_hex);
+    p_sm->msg = (unsigned char*)malloc(msg_len * 2);
+    memcpy(p_sm->msg, (unsigned char*)msg_hex, msg_len * 2);
+    p_sm->msg_len = msg_len * 2;
+    free(msg);
+    free(msg_hex);
+}
+
+
 int smpp_recv_processing_request_sm(socket_t *sock, char *interface, char *data_coding[16], char *ip_remote, unsigned int port_remote, void *data){
     //sent SM to Ronting function
     int ret = -1;
@@ -349,8 +675,9 @@ int smpp_recv_processing_request_sm(socket_t *sock, char *interface, char *data_
         generic_nack_t *req = (generic_nack_t*)data;
         switch(req->command_id){
             case DELIVER_SM : //client
-                smpp_get_sms(deliver_sm_t, data, data_coding, p_sm->src, p_sm->dst, p_sm->msg)
-                INFO(LOG_SCREEN, "msg = %s | src = %s | dst = %s",p_sm->msg, p_sm->src, p_sm->dst)
+                //smpp_get_sms(deliver_sm_t, data, data_coding, p_sm->src, p_sm->dst, p_sm->msg)
+                smpp_sms_parse(data, p_sm);
+                INFO(LOG_SCREEN, "msg = %s | src = %s | dst = %s|",p_sm->msg, p_sm->src, p_sm->dst)
                 break;
             case SUBMIT_SM : //server
                 smpp_get_sms(submit_sm_t, data, data_coding, p_sm->src, p_sm->dst, p_sm->msg)
@@ -375,6 +702,7 @@ int smpp_recv_processing_request_sm(socket_t *sock, char *interface, char *data_
             *k_smpp_data = req->sequence_number;
             map_set(map_session_smpp, k_smpp_data, p_smpp);
             //routing
+            ERROR(LOG_SCREEN | LOG_FILE, "interface = %s, ip_remote =%s, port_remote=%d",interface, ip_remote, port_remote)
             if(f_routing(interface, ip_remote, port_remote, p_sm) == -1){
                 //send resp error
                 ERROR(LOG_SCREEN | LOG_FILE, "Routing return -1 -> destroy SM/Session SMPP and sent error")
@@ -449,6 +777,21 @@ int smpp_recv_processing_request(socket_t *sock, const void *req){
     return (int) ret;
 }
 
+             //   if (p_sip->status_code == 202) { \
+             //       printf("SEND SIP MESSAGE 111111 !!!!!!!!!!@@@@@@@@@\n"); \
+             //       p_sip->cseq.number += 1; \
+             //       p_sip->content_length = 8; \
+             //       init_sip_from_t(&p_sip->from, "sip",p_sip->to.username, p_sip->to.host, p_sip->to.port, p_sip->from.tag); \
+             //       init_sip_to_t(&p_sip->to, "sip",   NULL, "172.31.0.10", 5060, NULL); \
+             //       char sms_deliver_report_default[9] = {'0','4','0','2','0','0','0','0','\0'}; \
+             //       char *sms_deliver_report = malloc(p_sip->content_length); \
+             //       memcpy(sms_deliver_report, sms_deliver_report_default, p_sip->content_length); \
+             //       p_sip->message = sms_deliver_report; \
+             //       printf("SEND SIP  MESSAGE 222222!!!!!!!!!!@@@@@@@@@\n"); \
+             //       sip_send_request(p_session->p_sm->sock, p_session->p_sm->ip_origin, p_session->p_sm->port_origin, p_sip); \
+             //       printf("SEND SIP  MESSAGE 222222!!!!!!!!!!@@@@@@@@@\n"); \
+             //   } \
+
 #define smpp_response_sm(data, p_session) \
     /*Get original message*/ \
     switch(p_session->p_sm->type){ \
@@ -463,6 +806,10 @@ int smpp_recv_processing_request(socket_t *sock, const void *req){
             } \
             p_sip->content_length = 0; \
             /*p_sip->cseq.number++;*/ \
+            int host_len = strlen(p_sip->from.host); \
+            if (*(p_sip->from.host + host_len - 2) == '>') {\
+                *(p_sip->from.host + host_len - 2) = '\0'; \
+            } \
             if(sip_send_response(p_session->p_sm->sock, p_session->p_sm->ip_origin, p_session->p_sm->port_origin, p_sip) != -1){ \
                 /*Clean DB*/ \
                 db_delete_sm_by_id(p_session->p_sm->id); \
@@ -566,10 +913,68 @@ int smpp_engine(config_smpp_t *p_config_smpp){
 }
 
 
+/* utility function to convert hex character representation to their nibble (4 bit) values */
+static uint8_t nibbleFromChar(char c)
+{
+	if(c >= '0' && c <= '9') return c - '0';
+	if(c >= 'a' && c <= 'f') return c - 'a' + 10;
+	if(c >= 'A' && c <= 'F') return c - 'A' + 10;
+	return 255;
+}
+
+/* Convert a string of characters representing a hex buffer into a series of bytes of that real value */
+uint8_t *hexStringToBytes(char *inhex)
+{
+	uint8_t *retval;
+	uint8_t *p;
+	int len, i;
+	
+    len = strlen(inhex) / 2;
+	retval = malloc(len+1);
+	for(i=0, p = (uint8_t *) inhex; i<len; i++) {
+		retval[i] = (nibbleFromChar(*p) << 4) | nibbleFromChar(*(p+1));
+		p += 2;
+	}
+    retval[len] = 0;
+	return retval;
+}
+
 /**
  * Routing function
  */
+ 
+ /* GSM 03.38 6.2.1 Character expanding (no decode!) */
+static int gsm_7bit_expand(char *text, const uint8_t *user_data, uint8_t septet_l, uint8_t ud_hdr_ind)
+{
+	int i = 0;
+	int shift = 0;
+	uint8_t c;
 
+	/* skip the user data header */
+	if (ud_hdr_ind) {
+		/* get user data header length + 1 (for the 'user data header length'-field) */
+		shift = ((user_data[0] + 1) * 8) / 7;
+		if ((((user_data[0] + 1) * 8) % 7) != 0)
+			shift++;
+		septet_l = septet_l - shift;
+	}
+
+	for (i = 0; i < septet_l; i++) {
+		c =
+			((user_data[((i + shift) * 7 + 7) >> 3] <<
+			  (7 - (((i + shift) * 7 + 7) & 7))) |
+			 (user_data[((i + shift) * 7) >> 3] >>
+			  (((i + shift) * 7) & 7))) & 0x7f;
+
+		*(text++) = c;
+	}
+
+	//*text = '\0';
+
+	return i;
+}
+
+ 
 int send_sms_to_smpp(unsigned char* interface_name, sm_data_t *p_sm){
     int ret = -1;
     config_smpp_t  *p_config_smpp = map_get(cfg_smpp, interface_name);
@@ -577,11 +982,10 @@ int send_sms_to_smpp(unsigned char* interface_name, sm_data_t *p_sm){
     if(p_config_smpp && (p_config_smpp->command_id == BIND_TRANSMITTER || p_config_smpp->command_id == BIND_TRANSCEIVER) && p_sm){
         unsigned int *k_sequence_number = new_uint32();
         unsigned int data_coding = 0;
-        char *msg = NULL;
-        int i = 0;
+        unsigned char *msg = NULL;
         smpp_session_t *v_session = new_smpp_session_t();
         generic_nack_t *gen = (generic_nack_t*)calloc(1, sizeof(generic_nack_t));
-        
+        /*
         while(i < 16){
             size_t ret = 0;
             if((ret = conv_char_codec_str(p_sm->msg, (size_t)strlen((char*)p_sm->msg), cfg_main->system_charset, &msg, (size_t)0, p_config_smpp->data_coding[i])) != -1){
@@ -591,14 +995,110 @@ int send_sms_to_smpp(unsigned char* interface_name, sm_data_t *p_sm){
             }
             i++;
         }
+        */
+        data_coding = 0x00;
+        uint8_t *sms_map = hexStringToBytes((char *)p_sm->msg);
+        int offset = 0;
+        int number_len = 0;
+        int number_len_oct = 0;
+
+        //****rp-da TLV****
+        printf("RP-DA : T:[0x%02X] L:[0x%02X] V:", sms_map[0], sms_map[1]);
+        print_hex_memory(sms_map + 2, sms_map[1]);
+        offset += 2; // TL
+        offset += sms_map[offset-1]; // V
+        //******************
         
+        //****rp-do TLV****
+        printf("RP-DO : T:[0x%02X] L:[0x%02X] V:", sms_map[offset], sms_map[offset+1]);
+        print_hex_memory(sms_map + offset + 2, sms_map[offset+1]);
+        offset += 2; // TL
+        offset += sms_map[offset-1]; // V
+        //******************
+        
+        //**** RP data Type and Length****
+        printf("RP-DATA : T: [0x%02X] L: [0x%02X]\n", sms_map[offset], sms_map[offset+1]);
+        offset += 2; //TL
+        //******************
+    
+        printf("RP-DATA : V:[start]\n"); 
+           
+        //**** TPDU first octet ****
+        printf("TPDU : First octet : [0x%02X] \n", sms_map[offset]);
+        int esm_class = 0x00; // UDHI = 0
+        if (sms_map[offset]&0x40) {
+            esm_class = 0x40; // UDHI = 1
+        }
+        offset += 1; // tpdu first octet
+        //******************
+
+        //**** TPDU TP-OA ****
+        printf("TPDU : TP-OA : LEN : [0x%02X] \n", sms_map[offset]);
+        offset += 1; // tpdu TP-OA: number length
+        printf("TPDU : TP-OA : TYPE : [0x%02X] \n", sms_map[offset]);
+        int tpdu_tp_oa_type = sms_map[offset];
+        offset += 1; // tpdu TP-OA: number type
+        number_len = sms_map[offset-2];
+        if (number_len % 2) {
+            /* number_len is odd */
+            number_len_oct = (number_len + 1)/2; // tpdu TP-OA: number
+        } else {
+            number_len_oct = number_len/2; // tpdu TP-OA: number
+        }
+        if (tpdu_tp_oa_type == 0x91) {
+            // decode international number
+            char* src_addr = malloc(number_len + 1);
+            decode_bcd_number(src_addr, number_len + 1, sms_map + offset,  number_len_oct);
+            p_sm->src = (unsigned char*)src_addr;
+        } else if(tpdu_tp_oa_type == 0xd1) {
+            char* src_addr = malloc(4); // Alphanumeric change to 100
+            char smart_number[4] = {'1','0','0','\0'};
+            memcpy(src_addr, smart_number, 4);
+            p_sm->src = (unsigned char*)src_addr;
+        }
+        printf("TPDU : TP-OA : NUMBER : ");
+        print_hex_memory(sms_map + offset, number_len_oct);
+        offset += number_len_oct;
+        //**********************
+
+        //**** TPDU TP-PID ****
+        printf("TPDU : TP-PID : [0x%02X] \n", sms_map[offset]);
+        offset += 1; // tpdu TP-PID
+        //**********************
+
+        //**** TPDU TP-DSC ****
+        printf("TPDU : TP-DSC : [0x%02X] \n", sms_map[offset]);
+        offset += 1; // tpdu TP-DSC
+        //**********************
+
+        //**** TPDU TP-SCTS ****
+        printf("TPDU : TP-SCTS : ");
+        print_hex_memory(sms_map + offset, 7);       
+        offset += 7; // tpdu TP-SCTS
+        //**********************
+        
+        //**** TPDU TP-User-data ****
+        printf("TPDU : TP-User-data : Len : [0x%02X] \n", sms_map[offset]);
+        int septet_len = sms_map[offset];
+        int tp_user_data_len_oct = (sms_map[offset] * 7 + 7) / 8;
+        printf("TPDU : TP-User-data : Len Octets: [0x%02X] \n", tp_user_data_len_oct);
+        offset += 1; //TP-user-data-len
+
+        printf("TPDU : TP-User-data : Data : ");
+        print_hex_memory(sms_map + offset, tp_user_data_len_oct);
+        msg = (char*)malloc(septet_len);        
+        gsm_7bit_expand(msg, sms_map + offset, septet_len, 0);
+        //**********************
+
+        printf("RP-DATA : V : [end] \n");
+
         gen->sequence_number = get_sequence_number();
         *k_sequence_number = gen->sequence_number;
         v_session->command_id = SUBMIT_SM;
         v_session->p_msg_smpp = gen;
         v_session->p_sm = p_sm;
         map_set(map_session_smpp, k_sequence_number, v_session);
-        ret = smpp_send_submit_sm(p_config_smpp->sock, p_sm->src, p_sm->dst, msg ? msg : p_sm->msg, i, &(gen->sequence_number), data_coding, p_config_smpp->ton, p_config_smpp->npi, p_config_smpp->ton, p_config_smpp->npi);
+        ret = smpp_send_submit_sm(p_config_smpp->sock, p_sm->src, p_sm->dst, msg ? msg : p_sm->msg, septet_len, &(gen->sequence_number), data_coding, p_config_smpp->ton, p_config_smpp->npi, p_config_smpp->ton, p_config_smpp->npi, esm_class);
     }
     return (int) ret;
 }

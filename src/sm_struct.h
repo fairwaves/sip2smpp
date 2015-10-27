@@ -35,6 +35,7 @@ typedef struct sm_data_t{
     //sm
     unsigned char *src;
     unsigned char *dst;
+    unsigned int   msg_len;
     unsigned char *msg;
 } sm_data_t;
 

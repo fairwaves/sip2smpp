@@ -119,7 +119,11 @@ int sip_send_request(socket_t *sock, char* ip_remote, unsigned int port_remote, 
     char *buffer = NULL;
     int ret = -1;
     if((ret = sip_message_to_string(p_sip, &buffer, true)) != -1){
-        ret = do_udp_send(sock, buffer, strlen((char*)buffer), ip_remote, port_remote);
+        size_t buffer_len = strlen((char*)buffer);
+        if(strcmp(p_sip->method, MESSAGE_STR) == 0){
+            buffer_len -= 4; // remove "\r\n"
+        }
+        ret = do_udp_send(sock, buffer, buffer_len, ip_remote, port_remote);
         if(buffer){
             free(buffer);
         }

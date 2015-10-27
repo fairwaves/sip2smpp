@@ -14,11 +14,14 @@ int sip_from_to_string(sip_from_t *p_from, char **p_buffer){
             sprintf(*p_buffer+position, ":%d", p_from->port);
             position=strlen((char*)*p_buffer);
         }
+        sprintf(*p_buffer+position, ">");
+        position++;
+
         if(p_from->tag && strlen((char*)p_from->tag) > 0){
-            sprintf(*p_buffer+position, ">;tag=%s", p_from->tag);
-        }else{
-            sprintf(*p_buffer+position, ">");
-        }
+            sprintf(*p_buffer+position, ";tag=%s", p_from->tag);
+        }//else{
+         //   sprintf(*p_buffer+position, ">");
+        //}
         return (int) 0;
     }
     return (int) -1;
@@ -154,6 +157,7 @@ int sip_message_to_string(sip_message_t *p_sip, char **p_buffer, bool request){
             //spacement
             i++;
             imp[i] = calloc(p_sip->content_length+1, sizeof(char));
+            //imp[i] = calloc(p_sip->content_length, sizeof(char));
             strncpy(imp[i], p_sip->message, p_sip->content_length);
         }
         implode(imp, "\r\n", p_buffer);

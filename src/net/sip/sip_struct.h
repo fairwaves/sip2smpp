@@ -89,6 +89,7 @@ void init_sip_message_t(sip_message_t *p_message, char *version, char *method, i
 /////
 
 #define TEXT_PLAIN_STR      "text/plain"
+#define TEXT_VND_3GPP_SMS      "application/vnd.3gpp.sms"
 
 
 /////////////////
