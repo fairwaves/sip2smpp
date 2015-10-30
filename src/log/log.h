@@ -77,9 +77,23 @@ void log_hook(Loglevel lvl, pthread_t tid,pid_t pid, const char* func, const cha
 		log_hook(lvl, GET_TID, GET_PID, __FUNCTION__, __FILE__, __LINE__, buff);	\
         }
 
+#define _LOG_ARRAY(lvl, len, text, array) \
+    if( (lvl >= LOG_CONSOLE || lvl <= LOG_ALERT) && text){ \
+                char buff[LOG_BUFFER_LEN]; \
+                int i = 0; \
+                int offset = 0; \
+                for (i = 0; i < len; i++) { \
+                    snprintf(buff + offset, len + 1, text, array[i]); \
+                    offset += 3; \
+                } \
+	        buff[offset] = '\0'; \
+	        log_hook(lvl, GET_TID, GET_PID, __FUNCTION__, __FILE__, __LINE__, buff);	\
+        }
+
 #define CONSOLE(display_flags, text, ...) _LOG(LOG_CONSOLE, text, ##__VA_ARGS__)
 #define DEBUG(display_flags, text, args...) _LOG(LOG_DEBUG, text, ##args)
 #define INFO(display_flags, text, args...) _LOG(LOG_INFO, text, ##args)
+#define INFO_ARRAY(display_flags, len, text, array) _LOG_ARRAY(LOG_INFO, len, text, array)
 #define NOTICE(display_flags, text, args...) _LOG(LOG_NOTICE, text, ##args)
 #define WARNING(display_flags, text, args...) _LOG(LOG_WARNING, text, ##args)
 #define ERROR(display_flags, text, args...) _LOG(LOG_ERROR, text, ##args)
