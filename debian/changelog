@@ -1,3 +1,11 @@
+sip2smpp (0.2.1) trusty; urgency=low
+
+  * Add handling of multipart sms
+  * Update sms logging
+  * Send sms via sip in application/vnd.3gpp.sms format
+
+ -- Kirill Zakharenko <earwin@gmail.com>  Fri, 6 Nov 2015 16:34:58 +0200
+
 sip2smpp (0.2.0) trusty; urgency=low
 
   * Initial release
