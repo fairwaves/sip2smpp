@@ -613,6 +613,8 @@ void smpp_sms_parse(void *data, sm_data_t *p_sm)
         INFO(LOG_SCREEN,"TPDU : TP-User-data: UDH Len: %d", rp_data[offset])
         offset += 1;
         tp_user_data_len_oct += 1;
+        int padbits = 7 - (((udh_len + 1) * 8) % 7);
+        int udh_len_septets = (((udh_len + 1) * 8) + padbits) / 7;
         // **
 
         // * UDH *
@@ -628,15 +630,14 @@ void smpp_sms_parse(void *data, sm_data_t *p_sm)
         int user_data_len_oct = 0;
 
         user_data_len_septets = smt->sm_length - 1 - udh_len;
-
-        user_data_len_oct += gsm_septets2octets(rp_data + offset, smt->short_message + udh_len + 1, user_data_len_septets, 0);
+        user_data_len_oct += gsm_septets2octets(rp_data + offset, smt->short_message + udh_len + 1, user_data_len_septets, padbits);
         tp_user_data_len_oct += user_data_len_oct;
         INFO(LOG_SCREEN,"TPDU : TP-User-data : Data without UDH: ")
         print_hex_memory(rp_data + offset, user_data_len_oct);
         offset += user_data_len_oct;
         //
         //*** TP-User-data-len ***
-        tp_user_data_len = tp_user_data_len_oct*8/7;
+        tp_user_data_len = udh_len_septets + user_data_len_septets; //tp_user_data_len_oct*8/7;
         rp_data[tp_user_data_len_offset] = tp_user_data_len;
         INFO(LOG_SCREEN,"TPDU : TP-User-data : Full Len : [0x%02X] \n", rp_data[tp_user_data_len_offset])
         INFO(LOG_SCREEN,"TPDU : TP-User-data :  Full Data : ")
@@ -985,6 +986,7 @@ static int gsm_7bit_expand(char *text, const uint8_t *user_data, uint8_t septet_
 	return i;
 }
 
+
 int send_sms_to_smpp(unsigned char* interface_name, sm_data_t *p_sm){
     int ret = -1;
     config_smpp_t  *p_config_smpp = map_get(cfg_smpp, interface_name);
@@ -1097,13 +1099,16 @@ int send_sms_to_smpp(unsigned char* interface_name, sm_data_t *p_sm){
         if (esm_class == 0x40) {
             INFO(LOG_SCREEN,"TPDU : TP-User-data : Len Septets : [0x%02X] \n", sms_map[offset])
             int tp_user_data_len_oct = (sms_map[offset] * 7 + 7) / 8;
+            int tp_user_data_septet_len = sms_map[offset];
             INFO(LOG_SCREEN,"TPDU : TP-User-data : Len Octets: [0x%02X] \n", tp_user_data_len_oct)
             offset += 1; //TP-user-data-len
 
             // *** UDH Len ***
             int udh_len = sms_map[offset];
             int udh_offset = offset;
+            int udh_len_sept = ((udh_len + 1) * 8 + 6) / 7;
             INFO(LOG_SCREEN,"TPDU : TP-User-data : UDH : Len Octets: [0x%02X] \n", sms_map[offset])
+            INFO(LOG_SCREEN,"TPDU : TP-User-data : UDH : Len Septets: [0x%02X] \n", udh_len_sept)
             offset += 1;
 
             // *** UDH Data ***
@@ -1112,17 +1117,16 @@ int send_sms_to_smpp(unsigned char* interface_name, sm_data_t *p_sm){
             offset += udh_len;
 
             // *** TP-user-data Data ***
-            int user_data_len_oct = tp_user_data_len_oct - udh_len - 1;
-            INFO(LOG_SCREEN,"TPDU : TP-User-data : Data: Len Oct: [0x%02X] \n", user_data_len_oct)
-            int user_data_len_sept = user_data_len_oct / 7;
+            int user_data_len_sept = tp_user_data_septet_len - udh_len_sept;
             INFO(LOG_SCREEN,"TPDU : TP-User-data : Data: Len Sept: [0x%02X] \n", user_data_len_sept)
-            INFO(LOG_SCREEN,"TPDU : TP-User-data : Data : ")
-            print_hex_memory(sms_map + offset, user_data_len_oct);
-            septet_len = 1 + udh_len + user_data_len_sept;
+            INFO(LOG_SCREEN,"TPDU : TP-User-data : ")
+            print_hex_memory(sms_map + udh_offset, tp_user_data_len_oct);
+            septet_len = udh_len + 1 + user_data_len_sept;
             msg = (char*)malloc(septet_len);
             memcpy(msg, sms_map + udh_offset, udh_len + 1);
-            gsm_7bit_expand(msg, sms_map + offset, user_data_len_sept, 0);
-
+            gsm_7bit_expand(msg + udh_len + 1, sms_map + udh_offset, tp_user_data_septet_len, 1);
+            INFO(LOG_SCREEN,"TPDU : MSG : ")
+            print_hex_memory(msg, septet_len);
         } else if (esm_class == 0x00) {
             INFO(LOG_SCREEN,"TPDU : TP-User-data : Len : [0x%02X] \n", sms_map[offset])
             septet_len = sms_map[offset];
