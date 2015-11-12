@@ -1143,6 +1143,9 @@ int send_sms_to_smpp(unsigned char* interface_name, sm_data_t *p_sm){
 
         INFO(LOG_SCREEN,"RP-DATA : V : [end] \n")
 
+        // Set Forward (i.e. Transaction) mode
+        esm_class = esm_class | 0x02;
+
         gen->sequence_number = get_sequence_number();
         *k_sequence_number = gen->sequence_number;
         v_session->command_id = SUBMIT_SM;
