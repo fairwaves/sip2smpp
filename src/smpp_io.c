@@ -570,7 +570,12 @@ void smpp_sms_parse(void *data, sm_data_t *p_sm)
     INFO(LOG_SCREEN,"TPDU : TP-DA : LEN : [0x%02X] \n", rp_data[offset])
     offset += 1;
     
-    rp_data[offset] = 0x91; //TP-DA type: international number
+    if (smt->dest_addr_ton == 1) { // 1: International
+        rp_data[offset] = 0x91; //TP-DA type: international number
+    } else {
+        rp_data[offset] = 0xa1; //TP-DA type: local number
+    }
+
     INFO(LOG_SCREEN,"TPDU : TP-DA : TYPE : [0x%02X] \n", rp_data[offset])
     offset += 1;
     
@@ -1062,17 +1067,27 @@ int send_sms_to_smpp(unsigned char* interface_name, sm_data_t *p_sm){
         } else {
             number_len_oct = number_len/2; // tpdu TP-OA: number
         }
+        int src_addr_ton = p_config_smpp->ton;
         if (tpdu_tp_oa_type == 0x91) {
             // decode international number
             char* src_addr = malloc(number_len + 1);
             decode_bcd_number(src_addr, number_len + 1, sms_map + offset,  number_len_oct);
             p_sm->src = (unsigned char*)src_addr;
+            src_addr_ton = 0x01;
         } else if(tpdu_tp_oa_type == 0xd1) {
             char* src_addr = malloc(4); // Alphanumeric change to 100
             char smart_number[4] = {'1','0','0','\0'};
             memcpy(src_addr, smart_number, 4);
             p_sm->src = (unsigned char*)src_addr;
+            src_addr_ton = 0x02;
+        } else if (tpdu_tp_oa_type == 0xa1) {
+            // decode local number
+            char* src_addr = malloc(number_len + 1);
+            decode_bcd_number(src_addr, number_len + 1, sms_map + offset,  number_len_oct);
+            p_sm->src = (unsigned char*)src_addr;
+            src_addr_ton = 0x02;
         }
+
         INFO(LOG_SCREEN,"TPDU : TP-OA : NUMBER : ")
         print_hex_memory(sms_map + offset, number_len_oct);
         offset += number_len_oct;
@@ -1152,7 +1167,7 @@ int send_sms_to_smpp(unsigned char* interface_name, sm_data_t *p_sm){
         v_session->p_msg_smpp = gen;
         v_session->p_sm = p_sm;
         map_set(map_session_smpp, k_sequence_number, v_session);
-        ret = smpp_send_submit_sm(p_config_smpp->sock, p_sm->src, p_sm->dst, msg ? msg : p_sm->msg, septet_len, &(gen->sequence_number), data_coding, p_config_smpp->ton, p_config_smpp->npi, p_config_smpp->ton, p_config_smpp->npi, esm_class);
+        ret = smpp_send_submit_sm(p_config_smpp->sock, p_sm->src, p_sm->dst, msg ? msg : p_sm->msg, septet_len, &(gen->sequence_number), data_coding, src_addr_ton, p_config_smpp->npi, p_config_smpp->ton, p_config_smpp->npi, esm_class);
     }
     return (int) ret;
 }
