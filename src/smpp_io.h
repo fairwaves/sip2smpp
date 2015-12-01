@@ -116,6 +116,8 @@ extern map *map_sar_msg;
 ///////////////////////
 
 extern map *map_session_smpp;//<uint(sequence_number), smpp_session_t>
+extern pthread_mutex_t map_session_smpp_mutex;
+
 
 int smpp_start_connection(config_smpp_t *p_config_smpp);
 int smpp_restart_connection(config_smpp_t *p_config_smpp);

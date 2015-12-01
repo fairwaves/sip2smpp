@@ -135,7 +135,9 @@ static void* func_listen_sip(void *data){
 void init_maps(){
     //map used for save the state of a transation
     map_session_smpp = new_map(free_uint32, NULL, compare_uint32, free_smpp_session, NULL, NULL);
+    pthread_mutex_init(&map_session_smpp_mutex, NULL);
     map_session_sip  = new_map(free_string, NULL, compare_string, free_sip_session,  NULL, NULL);
+    pthread_mutex_init(&map_session_sip_mutex, NULL);
     //map used for save all sm in transation in memory
     map_sm           = new_map(free_uint32, NULL, compare_uint32, free_sm_data, NULL, NULL);
     //map used for sar msg

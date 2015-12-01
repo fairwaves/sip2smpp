@@ -41,6 +41,7 @@ void init_sip_session(sip_session_t **p_p_sip, sip_message_t *p_msg_sip, void *p
 void  free_sip_session(void **data);
 
 extern map *map_session_sip; //<str(call_id), sip_session_t>
+extern pthread_mutex_t map_session_sip_mutex;
 
 ///////////////////////
 // Config SIP

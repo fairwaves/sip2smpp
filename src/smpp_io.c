@@ -14,6 +14,7 @@
 #endif /*_strncpy*/
 
 map *map_session_smpp;//<uint(sequence_number), smpp_data_t>
+pthread_mutex_t map_session_smpp_mutex;
 
 ///////////////////////
 // SMPP Session struct
@@ -206,7 +207,9 @@ int smpp_start_connection(config_smpp_t *p_config_smpp){
         if(smpp_send_bind_client(p_config_smpp->sock, p_config_smpp->command_id, p_config_smpp->ip, p_config_smpp->port, p_config_smpp->system_id, p_config_smpp->password, p_config_smpp->system_type, p_config_smpp->ton, p_config_smpp->npi, p_config_smpp->address_range, sequence_number) != -1){
             //create session
             smpp_session_t *p_session = new_smpp_session_t();
+            pthread_mutex_lock(&map_session_smpp_mutex);
             map_set(map_session_smpp, sequence_number, p_session);
+            pthread_mutex_unlock(&map_session_smpp_mutex);
             p_config_smpp->status = SMPP_CONNECT;
             INFO(LOG_SCREEN | LOG_FILE, "Wait SMPP connection of %s:%d", p_config_smpp->ip, p_config_smpp->port)
             return (int) 0;
@@ -732,6 +735,7 @@ int smpp_recv_processing_request_sm(socket_t *sock, char *interface, char *data_
             smpp_session_t *p_smpp = new_smpp_session_t();//Value
             init_smpp_session_t(&p_smpp, req->command_id, data, p_sm);
             *k_smpp_data = req->sequence_number;
+            pthread_mutex_lock(&map_session_smpp_mutex);
             map_set(map_session_smpp, k_smpp_data, p_smpp);
             //routing
             ERROR(LOG_SCREEN | LOG_FILE, "interface = %s, ip_remote =%s, port_remote=%d",interface, ip_remote, port_remote)
@@ -743,6 +747,7 @@ int smpp_recv_processing_request_sm(socket_t *sock, char *interface, char *data_
                 map_erase(map_session_smpp, k_smpp_data);
                 free_sm_data(&p_sm);
             }
+            pthread_mutex_unlock(&map_session_smpp_mutex);
         }else{
             free_sm_data((void**)&p_sm);
         }
@@ -832,7 +837,9 @@ int smpp_recv_processing_request(socket_t *sock, const void *req){
                 db_delete_sm_by_id(p_session->p_sm->id); \
                 /*Clean Memory*/ \
                 free_sm_data(&p_session->p_sm); \
+                pthread_mutex_lock(&map_session_sip_mutex); \
                 map_erase(map_session_sip, p_sip->call_id.number);/*clean origin session*/ \
+                pthread_mutex_unlock(&map_session_sip_mutex); \
                 map_erase(map_session_smpp, &((generic_nack_t*)p_session->p_msg_smpp)->sequence_number);/*clean forward session*/ \
             } \
         }   break; \
@@ -854,7 +861,7 @@ int smpp_recv_processing_request(socket_t *sock, const void *req){
 int smpp_recv_processing_response(void *res){
     int ret = -1;
     if(res){
-        //
+        pthread_mutex_lock(&map_session_smpp_mutex);
         smpp_session_t *p_session = (smpp_session_t*)map_get(map_session_smpp, &((generic_nack_t*)res)->sequence_number);
         if(p_session){
             //I have a response to my request
@@ -897,6 +904,7 @@ int smpp_recv_processing_response(void *res){
                     break;
             }
         }
+        pthread_mutex_unlock(&map_session_smpp_mutex);
     }
     return (int) ret;
 }
@@ -1166,8 +1174,11 @@ int send_sms_to_smpp(unsigned char* interface_name, sm_data_t *p_sm){
         v_session->command_id = SUBMIT_SM;
         v_session->p_msg_smpp = gen;
         v_session->p_sm = p_sm;
+
+        pthread_mutex_lock(&map_session_smpp_mutex);
         map_set(map_session_smpp, k_sequence_number, v_session);
         ret = smpp_send_submit_sm(p_config_smpp->sock, p_sm->src, p_sm->dst, msg ? msg : p_sm->msg, septet_len, &(gen->sequence_number), data_coding, src_addr_ton, p_config_smpp->npi, p_config_smpp->ton, p_config_smpp->npi, esm_class);
+        pthread_mutex_unlock(&map_session_smpp_mutex);
     }
     return (int) ret;
 }

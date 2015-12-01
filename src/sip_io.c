@@ -16,6 +16,7 @@
 #endif /*_strncpy*/
 
 map *map_session_sip; //<str(call_id), sip_data_t>
+pthread_mutex_t map_session_sip_mutex;
 
 ///////////////////////
 ////   sip_data_t  ////
@@ -131,7 +132,10 @@ int sip_restart_connection(config_sip_t *p_config_sip){
 static int sip_recv_processing_request(socket_t *sock, sip_message_t *p_sip, char *interface, char *ip_origin, unsigned int port_origin){
     //SIP MESSAGE (SM)
     //go routing + save session (with call_id_number)
+    pthread_mutex_lock(&map_session_sip_mutex);
     sip_session_t *p_session = (sip_session_t*)map_get(map_session_sip, p_sip->call_id.number);
+    pthread_mutex_unlock(&map_session_sip_mutex);
+
     if(p_session == NULL){
         char *k_call_id = NULL;
         p_session = new_sip_session_t();
@@ -145,6 +149,7 @@ static int sip_recv_processing_request(socket_t *sock, sip_message_t *p_sip, cha
         p_session->p_msg_sip = p_sip;
         p_session->p_sm = p_sm;
         //Set in map
+        pthread_mutex_lock(&map_session_sip_mutex);
         map_set(map_session_sip, k_call_id, p_session);
         //routing
         if(f_routing(interface, ip_origin, port_origin, p_sm) == -1){
@@ -158,6 +163,7 @@ static int sip_recv_processing_request(socket_t *sock, sip_message_t *p_sip, cha
             //map_erase(map_session_sip, k_call_id);
             free_sm_data(&p_sm);
         }
+        pthread_mutex_unlock(&map_session_sip_mutex);
     }else{
         free_sip_message(&p_sip);
     }
@@ -166,7 +172,9 @@ static int sip_recv_processing_request(socket_t *sock, sip_message_t *p_sip, cha
 
 static int sip_recv_processing_response(sip_message_t *p_sip){
     //200 OK || 202 ACCEPTED
+    pthread_mutex_lock(&map_session_sip_mutex);
     sip_session_t *p_session = (sip_session_t*)map_get(map_session_sip, p_sip->call_id.number);
+
     if(p_session){
         switch(p_session->p_sm->type){
             case I_SIP :
@@ -180,7 +188,9 @@ static int sip_recv_processing_response(sip_message_t *p_sip){
             case I_SMPP :
             {   generic_nack_t *p_smpp = (generic_nack_t*)p_session->p_sm->p_msg_origin;
                 smpp_send_response(p_session->p_sm->sock, p_smpp->command_id | GENERIC_NACK, ESME_ROK, &p_smpp->sequence_number);
+                pthread_mutex_lock(&map_session_smpp_mutex);
                 map_erase(map_session_smpp, &p_smpp->sequence_number);
+                pthread_mutex_unlock(&map_session_smpp_mutex);
                 //free(p_smpp);
             }   break;
             case I_SIGTRAN :
@@ -191,6 +201,7 @@ static int sip_recv_processing_response(sip_message_t *p_sip){
     db_delete_sm_by_id(p_session->p_sm->id);
     free_sm_data(&p_session->p_sm);
     map_erase(map_session_sip, p_sip->call_id.number);
+    pthread_mutex_unlock(&map_session_sip_mutex);
     free_sip_message(&p_sip);
     return (int) -1;
 }
@@ -291,9 +302,12 @@ int send_sms_to_sip(unsigned char *interface_name, sm_data_t *p_sm, unsigned cha
         //save session
         v_session->p_msg_sip = p_sip;
         v_session->p_sm = p_sm; 
+        pthread_mutex_lock(&map_session_sip_mutex);
         map_set(map_session_sip, k_session, v_session); 
         //send msg
-        return (int) sip_send_request(p_sip_conf->sock, ip_remote, port_remote, p_sip);
+        int res = sip_send_request(p_sip_conf->sock, ip_remote, port_remote, p_sip);
+        pthread_mutex_unlock(&map_session_sip_mutex);
+        return res;
     }
     return (int) -1;
 }
