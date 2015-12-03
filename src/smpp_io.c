@@ -832,6 +832,10 @@ int smpp_recv_processing_request(socket_t *sock, const void *req){
             if (*(p_sip->from.host + host_len - 2) == '>') {\
                 *(p_sip->from.host + host_len - 2) = '\0'; \
             } \
+            int to_host_len = strlen(p_sip->to.host); \
+            if (*(p_sip->to.host + to_host_len - 1) == '>') {\
+                *(p_sip->to.host + to_host_len - 1) = '\0'; \
+             } \
             if(sip_send_response(p_session->p_sm->sock, p_session->p_sm->ip_origin, p_session->p_sm->port_origin, p_sip) != -1){ \
                 /*Clean DB*/ \
                 db_delete_sm_by_id(p_session->p_sm->id); \
