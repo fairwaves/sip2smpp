@@ -853,7 +853,7 @@ int smpp_recv_processing_request(socket_t *sock, const void *req){
                 /*Clean DB*/ \
                 db_delete_sm_by_id(p_session->p_sm->id); \
                 /*Clean Memory*/ \
-                free_sm_data(p_session->p_sm); \
+                free_sm_data(&p_session->p_sm); \
                 map_erase(map_session_smpp, p_smpp->sequence_number);/*clean origin session*/ \
                 map_erase(map_session_smpp, &((generic_nack_t*)p_session->p_msg_smpp)->sequence_number);/*clean forward session*/ \
             } \
